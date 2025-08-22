@@ -2,9 +2,10 @@
 # - Preloads PDFs from /knowledge (so Lisa can ask with no uploads)
 # - Optional "Upload" mode for ad-hoc files
 # - Chunking + TF-IDF retrieval with a strict context budget (token-safe)
-# - Safety rails: question length limit, graceful error handling
+# - Safety rails: 200-word question limit + live counter, graceful errors
 
 from pathlib import Path
+import re
 import streamlit as st
 from groq import Groq
 
@@ -27,9 +28,9 @@ CONTEXT_CHAR_BUDGET = 3500
 # Built-in knowledge folder (PDFs live here in your repo)
 KNOWLEDGE_DIR = Path("knowledge")
 
-# Safety rails
-MAX_QUESTION_LENGTH = 1000  # characters
-GUIDANCE_TEXT = "Tip: keep questions under 3–4 sentences for best results."
+# Safety rails (word-based)
+MAX_QUESTION_WORDS = 200
+GUIDANCE_TEXT = "Tip: keep questions under 200 words (3–4 sentences) for best results."
 
 # Title
 st.title("Cozza–Arasu RAG Assistant 🚀")
@@ -52,7 +53,6 @@ def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP):
     while start < N:
         end = min(start + size, N)
         chunks.append(text[start:end])
-        # move start forward keeping overlap (avoid infinite loop)
         next_start = end - overlap
         start = next_start if next_start > start else end
     return [c.strip() for c in chunks if c.strip()]
@@ -94,8 +94,7 @@ def select_top_chunks(question: str, chunks: list[str],
     ranked = sorted(zip(sims, range(len(chunks))), reverse=True)
 
     selected, used = [], 0
-    # Check more than top_k to fit the budget nicely
-    for _score, idx in ranked[: top_k * 3]:
+    for _score, idx in ranked[: top_k * 3]:  # consider a bit more to fit budget
         c = chunks[idx]
         if used + len(c) <= budget:
             selected.append(c)
@@ -103,6 +102,11 @@ def select_top_chunks(question: str, chunks: list[str],
         if len(selected) >= top_k or used >= budget:
             break
     return selected
+
+
+def count_words(text: str) -> int:
+    # Count “word-ish” tokens; avoids overcounting punctuation/emoji
+    return len(re.findall(r"\b\w+\b", text or ""))
 
 
 @st.cache_resource(show_spinner=False)
@@ -147,14 +151,16 @@ else:
 st.divider()
 
 
-# ===================== Q/A UI with safety rails =====================
+# ===================== Q/A UI with 200-word limit =====================
 q = st.text_area("Ask a question:", help=GUIDANCE_TEXT)
-chars = len(q or "")
-st.caption(f"Characters: {chars} / {MAX_QUESTION_LENGTH}")
 
-ask_disabled = (chars == 0) or (chars > MAX_QUESTION_LENGTH)
-if chars > MAX_QUESTION_LENGTH:
-    st.error(f"Your question is too long. Please shorten it (max {MAX_QUESTION_LENGTH} characters).")
+# Live word counter
+words = count_words(q)
+st.caption(f"Words: {words} / {MAX_QUESTION_WORDS}")
+
+ask_disabled = (words == 0) or (words > MAX_QUESTION_WORDS)
+if words > MAX_QUESTION_WORDS:
+    st.error(f"Your question is too long. Please shorten it to {MAX_QUESTION_WORDS} words or fewer.")
 
 if st.button("Ask", disabled=ask_disabled) and q.strip():
     if not all_chunks:
@@ -187,5 +193,4 @@ if st.button("Ask", disabled=ask_disabled) and q.strip():
                 "Oops — the request was too large or something unexpected happened. "
                 "Please shorten the question or try again. If the issue persists, try fewer/smaller PDFs."
             )
-            # Show technical detail privately for you
             st.caption(f"(Technical detail: {e})")

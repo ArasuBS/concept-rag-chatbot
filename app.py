@@ -9,7 +9,8 @@ import docx  # python-docx
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-st.title("Concept RAG Chatbot (Groq + PDFs, Token-safe)")
+st.title("Cozza–Arasu RAG Assistant")
+st.caption("Built in collaboration spirit – inspired by Lisa Cozza & Arasu")
 
 # --- Config (tweak if needed) ---
 CHUNK_SIZE = 900        # characters per chunk

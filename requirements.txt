@@ -2,3 +2,4 @@ streamlit
 groq
 pypdf2
 python-docx
+scikit-learn
